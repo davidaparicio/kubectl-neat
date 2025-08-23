@@ -120,7 +120,7 @@ func TestGetCmd(t *testing.T) {
 		{
 			args: []string{""},
 			assertError: func(err error) bool {
-				return strings.HasPrefix(err.Error(), "Error invoking kubectl")
+				return strings.HasPrefix(err.Error(), "error invoking kubectl")
 			},
 			expOut: "",
 			expErr: "",
