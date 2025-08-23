@@ -76,7 +76,7 @@ var decoder runtime.Decoder
 
 func init() {
 	myscheme = runtime.NewScheme()
-	apisv1.AddToScheme(myscheme)
+	_ = apisv1.AddToScheme(myscheme)
 	decoder = scheme.Codecs.UniversalDeserializer()
 }
 

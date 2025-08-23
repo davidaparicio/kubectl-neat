@@ -183,7 +183,7 @@ func findEmptyPathsRecursive(cur gjson.Result, path string, res *[]string) {
 		*res = append(*res, path[1:]) //remove '.' from start
 		return
 	}
-	if !(cur.IsArray() || cur.IsObject()) {
+	if !cur.IsArray() && !cur.IsObject() {
 		return
 	}
 	// sjson's ForEach doesn't put track index when iterating arrays, hence the index variable

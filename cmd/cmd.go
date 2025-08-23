@@ -18,7 +18,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"os/exec"
 	"unicode"
@@ -35,7 +35,7 @@ func init() {
 	inputFile = rootCmd.Flags().StringP("file", "f", "-", "file path to neat, or - to read from stdin")
 	rootCmd.SetOut(os.Stdout)
 	rootCmd.SetErr(os.Stderr)
-	rootCmd.MarkFlagFilename("file")
+	_ = rootCmd.MarkFlagFilename("file")
 	rootCmd.AddCommand(getCmd)
 	rootCmd.AddCommand(versionCmd)
 }
@@ -59,9 +59,12 @@ kubectl neat -f ./my-pod.json --output yaml`,
 		var err error
 		if *inputFile == "-" {
 			stdin := cmd.InOrStdin()
-			in, err = ioutil.ReadAll(stdin)
+			in, err = io.ReadAll(stdin)
+			if err != nil {
+				return err
+			}
 		} else {
-			in, err = ioutil.ReadFile(*inputFile)
+			in, err = os.ReadFile(*inputFile)
 			if err != nil {
 				return err
 			}
@@ -105,7 +108,7 @@ kubectl neat get -- svc -n default myservice --output json`,
 		kubectlCmd := exec.Command(kubectl, cmdArgs...)
 		kres, err := kubectlCmd.CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("Error invoking kubectl as %v %v", kubectlCmd.Args, err)
+			return fmt.Errorf("error invoking kubectl as %v %v", kubectlCmd.Args, err)
 		}
 		//handle the case of 0--J->J--J
 		outFormat := *outputFormat
