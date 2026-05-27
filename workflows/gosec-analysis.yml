@@ -1,0 +1,40 @@
+name: "Security Scan (gosec)"
+
+# Run workflow each time code is pushed to your repository and on a schedule.
+# The scheduled workflow runs every at 10:13 on Thursday UTC time.
+# https://crontab.guru/#13_10_*_*_4
+on:
+  schedule:
+    - cron: '13 10 * * 4'
+  workflow_call:
+
+jobs:
+  analyze:
+    name: Analyze gosec
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    env:
+      GO111MODULE: on
+    
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v6
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@v2.24.7 #master
+        with:
+          # we let the report trigger content trigger a failure using the GitHub Security features.
+          args: '-no-fail -fmt sarif -out results.sarif ./...'
+      - name: Fix SARIF relationships
+        run: |
+          jq 'if .runs[0].tool.driver.rules then 
+                .runs[0].tool.driver.rules |= map(if .relationships then (.relationships |= []) else . end)
+              else . end' results.sarif > results.fixed.sarif && mv results.fixed.sarif results.sarif
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          # Path to SARIF file relative to the root of the repository
+          sarif_file: results.sarif
+        #https://github.com/analysis-tools-dev/static-analysis#go
