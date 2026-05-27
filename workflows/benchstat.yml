@@ -1,0 +1,79 @@
+# This workflow runs benchmarks against the current branch, compares them to benchmarks against
+# main, and uploads the results as an artifact. Unlike in the Validate workflow we only test these
+# benchmarks against the latest versions of Go and the Runner.
+
+name: Benchstat
+
+on:
+  workflow_call:
+
+permissions:
+  pull-requests: write
+
+env:
+  BENCH_COUNT: 10
+
+jobs:
+  benchstat:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout incoming branch
+        uses: actions/checkout@v6
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+      - name: Install benchstat
+        run: go install golang.org/x/perf/cmd/benchstat@latest
+      - name: Benchmark incoming branch
+        run: go test -run=XXX -bench=. -benchmem -count=${{ env.BENCH_COUNT }} ./... | tee bench-incoming.txt
+      - name: Checkout baseline (main)
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          clean: false
+      - name: Benchmark baseline (main)
+        run: go test -run=XXX -bench=. -benchmem -count=${{ env.BENCH_COUNT }} ./... | tee bench-baseline.txt
+      - name: Benchstat Results
+        run: |
+          benchstat bench-baseline.txt bench-incoming.txt | tee benchstat.txt
+          python3 .github/scripts/benchstat_to_markdown.py benchstat.txt benchstat.md
+          cat benchstat.md >> $GITHUB_STEP_SUMMARY
+      - name: Comment PR with benchmark results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const md = fs.readFileSync('benchstat.md', 'utf8')
+              + '<details><summary>ℹ️ About</summary>\n\nBenchmarks ran with `-count=${{ env.BENCH_COUNT }}`. Statistically significant changes (p < 0.05) are marked by benchstat.\n</details>';
+            const marker = '## Benchmark Results';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: md,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: md,
+              });
+            }
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchstat
+          path: |
+            bench-incoming.txt
+            bench-baseline.txt
+            benchstat.txt

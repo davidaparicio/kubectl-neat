@@ -1,0 +1,69 @@
+name: Main CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "*" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
+  packages: write
+  deployments: write
+  id-token: write
+  actions: read
+  security-events: write
+  pull-requests: write # needed for sonar/benchstat PR comments (all [bot])
+
+jobs:
+  # Security Block - runs in parallel
+  gosec-security:
+    name: Security Scan (gosec)
+    uses: ./.github/workflows/gosec-analysis.yml
+    secrets: inherit
+
+  sonar-security:
+    name: Security Scan (sonar)
+    uses: ./.github/workflows/sonar-analysis.yml
+    secrets: inherit
+
+  codeql-security:
+    name: Security Scan (codeql)
+    uses: ./.github/workflows/codeql-analysis.yml
+    secrets: inherit
+
+  # Tests Block - runs after Security completes
+  golangci-lint:
+    name: Lint (golangci-lint)
+    needs: [gosec-security, sonar-security, codeql-security]
+    uses: ./.github/workflows/golangci-lint.yml
+    secrets: inherit
+
+  go-test:
+    name: Test (Go)
+    needs: [gosec-security, sonar-security, codeql-security]
+    uses: ./.github/workflows/go-test.yml
+    secrets: inherit
+
+  # Publish Block - runs in parallel after Tests complete, only on tags
+  goreleaser:
+    name: Release (GoReleaser)
+    needs: [golangci-lint, go-test]
+    if: startsWith(github.ref, 'refs/tags/')
+    uses: ./.github/workflows/goreleaser.yml
+    secrets: inherit
+
+  docker-release:
+    name: Release (Docker)
+    needs: [golangci-lint, go-test]
+    if: startsWith(github.ref, 'refs/tags/')
+    uses: ./.github/workflows/docker-releaser.yml
+    secrets: inherit
+
+  # Benchstat Block - runs after tests complete
+  benchmarks:
+    name: Performance Benchmarks
+    needs: [golangci-lint, go-test]
+    uses: ./.github/workflows/benchstat.yml
+    secrets: inherit
