@@ -5,11 +5,20 @@
 # make test-unit: just unit tests
 # make test-e2e: just e2e tests
 # make release: after git tag, release to github and prepare krew file
+# make update-deps: bump all Go dependencies (k8s pins respected via K8S_VERSION)
+# make vuln: run govulncheck
 
-.PHONY: test test-unit test-e2e build goreleaser release clean
+.PHONY: test test-unit test-e2e build goreleaser release clean update-deps vuln
+
 os ?= $(shell uname -s | tr '[:upper:]' '[:lower:]')
 arch ?= $(shell go env GOARCH | tr '[:upper:]' '[:lower:]')
 underscore = $(word $2,$(subst _, ,$1))
+
+# K8S_VERSION pins both the module version (v0.X.Y) and the
+# k8s.io/kubernetes meta-module version (v1.X.Y). Override on the CLI:
+#   make update-deps K8S_VERSION=0.36.1
+K8S_VERSION ?= 0.36.1
+K8S_KUBERNETES_VERSION ?= 1.$(word 2,$(subst ., ,$(K8S_VERSION))).$(word 3,$(subst ., ,$(K8S_VERSION)))
 
 test: test-unit test-e2e test-integration
 
@@ -63,3 +72,32 @@ release: dist/kubectl-neat_darwin_arm64.tar.gz dist/kubectl-neat_darwin_amd64.ta
 
 clean:
 	rm -rf dist
+
+# update-deps bumps all Go module dependencies.
+# Strategy:
+#   1. Rewrite every `replace k8s.io/<x> => k8s.io/<x> v0.A.B` line to K8S_VERSION
+#      (go get -u does NOT touch the right-hand side of replace directives).
+#   2. Pin the direct k8s.io deps explicitly.
+#   3. Bump everything else (-u) and tidy.
+# Override the target version with: make update-deps K8S_VERSION=0.35.5
+update-deps:
+	@echo ">> Bumping k8s replace directives to v$(K8S_VERSION)"
+	@sed -i.bak -E 's#(k8s\.io/[a-z0-9-]+ v)0\.[0-9]+\.[0-9]+$$#\1$(K8S_VERSION)#g' go.mod && rm go.mod.bak
+	@echo ">> Pinning direct k8s deps"
+	go get k8s.io/apimachinery@v$(K8S_VERSION) k8s.io/client-go@v$(K8S_VERSION) k8s.io/kubernetes@v$(K8S_KUBERNETES_VERSION)
+	@echo ">> Upgrading remaining dependencies"
+	go get -u ./...
+	@echo ">> Re-pinning k8s replace directives (go get -u may have drifted indirects)"
+	@sed -i.bak -E 's#(k8s\.io/[a-z0-9-]+ v)0\.[0-9]+\.[0-9]+$$#\1$(K8S_VERSION)#g' go.mod && rm go.mod.bak
+	go get k8s.io/apimachinery@v$(K8S_VERSION) k8s.io/client-go@v$(K8S_VERSION) k8s.io/kubernetes@v$(K8S_KUBERNETES_VERSION)
+	@echo ">> go mod tidy"
+	go mod tidy
+	@echo ">> Verifying build"
+	go build ./...
+	@echo ">> Running tests"
+	go test ./...
+	@echo ">> Done. Review go.mod / go.sum changes before committing."
+
+vuln:
+	@command -v govulncheck >/dev/null 2>&1 || go install golang.org/x/vuln/cmd/govulncheck@latest
+	govulncheck ./...
