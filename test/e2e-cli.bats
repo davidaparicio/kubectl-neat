@@ -15,7 +15,7 @@ rootDir="./test/fixtures"
 @test "invalid args 2" {
     run2 "$exe" get --foo
     [ $status -eq 1 ]
-    [[ "$stderr" == "Error: Error invoking kubectl"* ]]
+    [[ "$stderr" == "Error: error invoking kubectl"* ]]
 }
 
 @test "invalid args 3" {
